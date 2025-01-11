@@ -16,3 +16,4 @@ is currently in development stage.
 __version__ = "v0.0.1.dev0"
 
 # init-time options registrations
+from tradingview import io # noqa: F401, F403 # pyright: ignore[reportMissingImports]

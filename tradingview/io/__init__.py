@@ -13,4 +13,4 @@ in steps (wip), while the module :mod:`automatic` is planned for the
 future to automate the process of data download and processing.
 """
 
-from tradingview.io import aided
+from tradingview.io.aided import * # noqa: F401, F403 # pyright: ignore[reportMissingImports]
