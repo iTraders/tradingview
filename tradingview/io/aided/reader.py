@@ -4,27 +4,121 @@
 Read Raw Data File(s) Typically Downloaded from TradingView
 """
 
+from typing import Iterable
+from abc import ABC, abstractmethod
+
 import pandas as pd
 
-class DataReader:
+class BaseReader(ABC):
     def __init__(self, filepath : str, timestamp : str = "ISO") -> None:
         self.filepath = filepath
-        self.timestamp = timestamp # ? ISO/UNIX Format Download
+        self.timestamp = self._assertvalues(timestamp, ["ISO", "UNIX"])
 
 
-    def read_file(self, filetype : str = "csv", **kwargs) -> pd.DataFrame:
+    @abstractmethod
+    def read_file(self, filetype : str, **kwargs) -> pd.DataFrame:
+        """
+        Read the File and Return as a DataFrame
+
+        The method reads the file and returns the data as a
+        :class:`pandas.DataFrame`. The method is abstract and is
+        to be implemented by the child class.
+        """
+        
+        pass
+
+
+    @staticmethod
+    def _assertvalues(value : object, allowed : Iterable[object]) -> object:
+        """
+        Static Class Method to Assert Values
+
+        Allowed values are passed as a list and the value is checked,
+        if fails raises an assertion error, else returns the value.
+        """
+
+        assert value in allowed, \
+            f"Invalid Value. Got {value} Allowed: {allowed}"
+        return value
+
+
+    @staticmethod
+    def _assertdtype(value : object, allowed : Iterable[type]) -> object:
+        """
+        Static Class Method to Assert Data Type
+
+        The method is used to assert the data type of the value passed.
+        If the data type is not as expected, then it raises an assertion
+        error, else returns the value.
+        """
+
+        assert type(value) in allowed, \
+            f"Invalid Data Type. Got {type(value)} Expected: {allowed}"
+        return value
+
+
+    @staticmethod
+    def __selfkwargs__() -> list:
+        """
+        Return(s) a List of Keyword Arguments for the Class
+
+        The keyword arguments are returned as a list of strings, which
+        should be ignored when calling :mod:`pandas` functions. Any
+        defined keyword argument not in the list is passed to the
+        :func:`pd.read_*()` function.
+
+        ..warning::
+
+            This method is not a good programming practice, but is
+            defined to keep development simple.
+        """
+
+        return [
+            # read_file()
+            "timeperiod",
+
+            # parse_dates()
+            "dtformat",
+            "keepdatepart"
+        ]
+
+
+class DataReader(BaseReader):
+    def __init__(self, filepath : str, timestamp : str = "ISO") -> None:
+        super().__init__(filepath = filepath, timestamp = timestamp)
+
+
+    def read_file(
+        self,
+        filetype : str = "csv",
+        dtcolumns : list = [],
+        todatetime : bool = False,
+        **kwargs
+    ) -> pd.DataFrame:
         timeperiod = kwargs.get("timeperiod", "infer")
-
         cfunc = dict(csv = pd.read_csv, xlsx = pd.read_excel)
-        frame = cfunc[filetype](self.filepath, **kwargs)
-        return self.parse_dates(frame, **kwargs)
+
+        # seperate out possible pandas argument external controls
+        pdkwargs = {
+            k : v for k, v in kwargs.items()
+            if k not in self.__selfkwargs__()
+        }
+
+        frame = cfunc[filetype](self.filepath, **pdkwargs)
+
+        return self.parse_dates(
+            frame,
+            dtcolumns = dtcolumns,
+            todatetime = todatetime,
+            **kwargs
+        )
 
 
     def parse_dates(
         self,
         frame : pd.DataFrame,
-        columns : list,
-        todatetime : bool = False,
+        dtcolumns : list,
+        todatetime : bool,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -37,8 +131,8 @@ class DataReader:
         :func:`pd.Timestamp` to a :attr:`datetime` object and
         additional functionalities like keeping only date part.
 
-        :type  columns: list
-        :param columns: List of columns where parsing is done
+        :type  dtcolumns: list
+        :param dtcolumns: List of columns where parsing is done
             iteratively. If passing a single value, then also pass
             the same as a list (todo fix).
 
@@ -64,20 +158,21 @@ class DataReader:
                 False, value is kept intact (todo).
         """
 
-        dtformat = kwargs.get("dtformat", "%Y-%m-%d %H:%M:%S+05:30")
-        keepdatepart = kwargs.get("keepdatepart", False)
-
-        # consider converting all the dtformat/keepdatepart for each column
-        # else, the value must be an instance of dictionary object, or value
-        assert type(dtformat) in [str, dict], "Invalid format for `dtformat` argument."
-        assert type(keepdatepart) in [bool, dict], "Invalid format for `keepdatepart` argument."
+        dtformat = self._assertdtype(
+            kwargs.get("dtformat", "%Y-%m-%dT%H:%M:%S+05:30"),
+            allowed = [str, dict]
+        )
+        keepdatepart = self._assertdtype(
+            kwargs.get("keepdatepart", False),
+            allowed = [bool, dict]
+        )
 
         # if assertion is not failed, then we can convert the data to dict if not already
-        dtformat = dtformat if type(dtformat) != dict else { c : dtformat for c in columns }
-        keepdatepart = keepdatepart if type(keepdatepart) != dict else { c : keepdatepart for c in columns }
+        dtformat = dtformat if type(dtformat) == dict else { c : dtformat for c in dtcolumns }
+        keepdatepart = keepdatepart if type(keepdatepart) == dict else { c : keepdatepart for c in dtcolumns }
 
         frame = frame.copy()
-        for column in columns:
+        for column in dtcolumns:
             frame[column] = pd.to_datetime(frame[column], format = dtformat[column])
 
         return frame
